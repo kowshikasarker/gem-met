@@ -2,7 +2,7 @@
 ## Scripts
 | Filename  | Functionality |
 | ------------- | ------------- |
-|  preprocess-metabolome.py | Filters raw baseline and end concentration to remove samples measured at only one timestamp, metabolites with too many missing values and imputes the remaining missing values|
+|  preprocess-metabolome.py | Filters raw baseline and end metabolite concentrations to remove samples measured at only one timestamp, metabolites with too many missing values, and imputes the remaining missing values.|
 | preprocess-human-gem.py  | Filters Human-GEM to produce the 9 reaction sets. |
 |compute-change-feature.py|Calculates the proposed 'Change' features with preprocessed metabolome and a given reaction set.|
 |compute-ratio-feature.py|Calculates the proposed 'Ratio' features with preprocessed metabolome and a given reaction set.|

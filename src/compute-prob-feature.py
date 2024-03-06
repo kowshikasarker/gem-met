@@ -2,30 +2,37 @@ import argparse
 import pandas as pd
 import networkx as nx
 import pickle
+import numpy as np
+from pathlib import Path
+import sys
+
 
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-b", "--base_path", type=str,
-                        help="path to baseline metabolomics profile in csv format",
+                        help="path to baseline metabolomics profile in .tsv format",
                         required=True, default=None)
     parser.add_argument("-e", "--end_path", type=str,
-                        help="path to end metabolomics profile in csv format",
+                        help="path to end metabolomics profile in .tsv format",
                         required=True, default=None)
     parser.add_argument("-c", "--met_change_path", type=str,
-                        help="path to metabolite concentration change in tsv format", required=True, default=None)
+                        help="path to metabolite concentration change in .tsv format", required=True, default=None)
     
     parser.add_argument("-r", "--react_set_path", type=str,
-                        help="path to reaction set in tsv format",
+                        help="path to reaction set in .tsv format",
                         required=True, default=None)
     
-    parser.add_argument("-m", "--met_75_path", type=str,
-                        help="path to list of 75 metabolites in tsv format", required=True, default=None)
-    parser.add_argument("-i", "--id_path", type=str,
-                        help="path to metabolite identifiers in tsv format", required=True, default=None)
+    parser.add_argument("-m", "--met_path", type=str,
+                        help="path to list of human-gem overlapped metabolites in .tsv format", required=True, default=None)
+    parser.add_argument("-a", "--alpha", type=float,
+                        help="Parameter alpha for RWR algorithm", required=True, default=None)
     parser.add_argument("-o", "--out_dir", type=str,
                         help="path to output dir",
+                        required=True, default=None)
+    parser.add_argument("-l", "--log_path", type=str,
+                        help="path to log file",
                         required=True, default=None)
     args = parser.parse_args()
     return args
@@ -39,100 +46,104 @@ def analyze_single_study_per_sample(G, treatment, alpha, out_dir):
     control = 'No' + treatment
     print('***', treatment, control, '***')
     
+    G = G.copy()
+    
     node_label = nx.get_node_attributes(G, 'label')
     
     react_nodes = set([node for node, label in node_label.items() if label=='reaction'])
-    print(len(react_nodes), 'react_nodes')
+    #print(len(react_nodes), 'react_nodes')
     
     met_nodes = set([node for node, label in node_label.items() if label=='metabolite'])
-    print(len(met_nodes), 'met_nodes')
+    #print(len(met_nodes), 'met_nodes')
     
     sample_nodes = set([node for node, label in node_label.items() if label=='sample'])
-    print(len(sample_nodes), 'sample_nodes')
+    #print(len(sample_nodes), 'sample_nodes')
+    #print(sample_nodes)
     
     study_samples = set([s for s in sample_nodes if (treatment in s)])
-    print('study_samples', len(study_samples))
+    #print('study_samples', len(study_samples))
     
     control_samples = set([s for s in study_samples if (control in s)])
-    print('control_samples', len(control_samples))
+    #print('control_samples', len(control_samples))
     
     treatment_samples = study_samples.difference(control_samples)
-    print('treatment_samples', len(treatment_samples))
+    #print('treatment_samples', len(treatment_samples))
     
     invalid_samples = sample_nodes.difference(study_samples)
-    print('invalid_samples', len(invalid_samples))
+    #print('invalid_samples', len(invalid_samples))
     #print('invalid_samples', len(invalid_samples), invalid_samples)
     
-    print('Before removing invalid_samples and isolates', G.number_of_nodes(), 'nodes', G.number_of_edges(), 'edges')
+    #print('Before removing invalid_samples and isolates', G.number_of_nodes(), 'nodes', G.number_of_edges(), 'edges')
     
     G.remove_nodes_from(invalid_samples)
     G.remove_nodes_from(list(nx.isolates(G)))
     
-    print('After removing invalid_samples and isolaets', G.number_of_nodes(), 'nodes', G.number_of_edges(), 'edges')
+    #print('After removing invalid_samples and isolaets', G.number_of_nodes(), 'nodes', G.number_of_edges(), 'edges')
     
     eq_prob = []
     
-    for sample in study_samples:
-        prob = nx.pagerank(G, alpha=alpha, personalization={sample: 1}, weight="weight", max_iter=1000)
-        prob['sample'] = sample
+    #print('study_samples', len(study_samples))
+    
+    for key in study_samples:
+        prob = nx.pagerank(G, alpha=alpha, personalization={key: 1}, weight="weight", max_iter=1000)
+        prob['key'] = key
         eq_prob.append(prob)
-    df = pd.DataFrame.from_records(eq_prob, index='sample')
+        
+    #print('eq_prob', eq_prob)
+    df = pd.DataFrame.from_records(eq_prob, index='key')
     df.to_csv(out_dir + '/' + treatment + '.' + control + '.prob.tsv', sep='\t')
     
 
 def main(args):
-    base_df = pd.read_csv(args.base_path, sep='\t', index_col='Key')
-    base_df.index = base_df.index.str.replace('.Baseline', '')
+    Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+    
+    orig_stdout = sys.stdout
+    log_file = open(args.log_path, 'w')
+    sys.stdout = log_file
+    
+    base_df = pd.read_csv(args.base_path, sep='\t', index_col='key')
     base_df = base_df.sort_index().sort_index(axis=1)
-    base_df.head()
 
-    end_df = pd.read_csv(args.end_path, sep='\t', index_col='Key')
-    end_df.index = end_df.index.str.replace('.End', '')
+    end_df = pd.read_csv(args.end_path, sep='\t', index_col='key')
     end_df = end_df.sort_index().sort_index(axis=1)
-    end_df.head()
+    
+    change_df = pd.read_csv(args.met_change_path, sep='\t')
+    change_df[['person_id', 'diet']] = change_df['key'].str.split('.', expand=True)
+    
+    
+    treatments = set(change_df.diet)
+    treatments = [treatment for treatment in treatments if not treatment.startswith('No')]
+    print('treatments', treatments)
+    change_df = change_df.drop(columns=['person_id', 'diet']).set_index('key')
 
-    change_df = pd.read_csv(args.met_change_path, sep='\t', index_col='Key')
     change_df = change_df.sort_index().sort_index(axis=1)
-    change_df.head()
 
     change_direction = change_df > 0 # True(1) -> increase (M+ node), False(0) -> decrease (M- node)
-    change_direction.head()
-
     change_magnitude = change_df.abs()
-    change_magnitude.head()
 
     sample_met_inc = change_magnitude.div(end_df).fillna(0) # if end_df concentration is zero
     sample_met_inc = sample_met_inc.replace([np.inf, -np.inf], 0)
-    sample_met_inc.head()
 
     sample_met_dec = change_magnitude.div(base_df).fillna(0)
     sample_met_dec = sample_met_dec.replace([np.inf, -np.inf], 0)
-    sample_met_dec.head()
 
     sample_met_weight = sample_met_inc * change_direction + sample_met_dec * (1 - change_direction)
-    sample_met_weight.head()
-
     sample_met_weight = np.exp(sample_met_weight)
-    sample_met_weight.head()
-
     nomalizer = sample_met_weight.sum(axis=1)
-    nomalizer.head()
-
     sample_met_prob = sample_met_weight.div(nomalizer, axis=0)
-    sample_met_prob.head()
 
     hmdb_list = sample_met_prob.columns
-    len(hmdb_list)
+    print('hmdb_list', len(hmdb_list))
 
     sample_met_edges = []
-    for person_id, metabolites in sample_met_prob.iterrows():
+    for key, metabolites in sample_met_prob.iterrows():
         #print(person_id)
         for met in hmdb_list:
             #print(type(met), met)
-            if(change_direction.loc[person_id][met]): # true -> increase
-                sample_met_edges.append((person_id, met + '+', metabolites[met]))
+            if(change_direction.loc[key][met]): # true -> increase
+                sample_met_edges.append((key, met + '+', metabolites[met]))
             else:
-                sample_met_edges.append((person_id, met + '-', metabolites[met]))
+                sample_met_edges.append((key, met + '-', metabolites[met]))
     sample_met_edges[:5]
 
     met_sample_edges = []
@@ -142,18 +153,18 @@ def main(args):
         #print(met_inc)
         met_inc = np.exp(met_inc)
         met_inc = met_inc / met_inc.sum()
-        print('met_inc.sum', met_inc.sum())
+        #print('met_inc.sum', met_inc.sum())
 
-        for person_id, inc_val in met_inc.items():
-            met_sample_edges.append((met + '+', person_id, inc_val))
+        for key, inc_val in met_inc.items():
+            met_sample_edges.append((met + '+', key, inc_val))
 
         met_dec = sample_met_dec[~change_direction[met]][met]
         met_dec = np.exp(met_dec)
         met_dec = met_dec / met_dec.sum()
-        print('met_dec.sum', met_dec.sum())
+        #print('met_dec.sum', met_dec.sum())
 
-        for person_id, dec_val in met_dec.items():
-            met_sample_edges.append((met + '-', person_id, dec_val))
+        for key, dec_val in met_dec.items():
+            met_sample_edges.append((met + '-', key, dec_val))
 
     react_df = pd.read_csv(args.react_set_path, sep='\t', index_col='RXN_ID')
 
@@ -161,8 +172,7 @@ def main(args):
     react_df['Measured_Product'] = react_df['Measured_Product'].apply(str_to_set)
 
 
-    id_df = pd.read_csv(args.id_path, sep='\t')
-
+    id_df = pd.read_csv(args.met_path, sep='\t')
 
     met_to_hmdb = dict(zip(id_df.MET_ID, id_df.HMDB_ID))
 
@@ -208,10 +218,9 @@ def main(args):
             print('No reaction mapped to', met)
             no_react_count += 1
             no_react_mets.add(met)
-    print('no_react_count', no_react_count)
+    #print('no_react_count', no_react_count)
 
     all_edges = sample_met_edges + met_sample_edges + react_met_edges + met_react_edges
-
 
 
     G = nx.DiGraph()
@@ -231,11 +240,13 @@ def main(args):
 
     nx.set_node_attributes(G, node_label, name='label')
     sample_nodes = nodes.difference(react_nodes).difference(met_nodes)
-    pickle.dump(G, open(args.out_dir + '/network.3.1.pickle', 'wb'))
+    pickle.dump(G, open(args.out_dir + '/network.pickle', 'wb'))
     
-    treatments = ['Almond', 'Avocado', 'Walnut', 'Oats', 'Barley', 'Broccoli']
     for treatment in treatments:
-        analyze_single_study_per_sample(treatment, alpha)
+        analyze_single_study_per_sample(G, treatment, args.alpha, args.out_dir)
+        
+    sys.stdout = orig_stdout
+    log_file.close()
         
 if __name__ == "__main__":
     main(parse_args())

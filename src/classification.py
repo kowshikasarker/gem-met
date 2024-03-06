@@ -1,72 +1,38 @@
 # imports
+import argparse
 import pandas as pd
+import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from scipy import stats
-import numpy as np
-import csv, scipy, os, warnings, sys
+import csv, os, warnings, sys
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import LeaveOneOut
-from sklearn.model_selection import cross_val_predict, cross_validate
-from sklearn.model_selection import ParameterGrid
-from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.model_selection import LeaveOneOut, cross_val_predict, cross_validate, ParameterGrid
+from sklearn.metrics import classification_report, roc_auc_score, average_precision_score
 import shutil
-
-#np.random.seed(1)
-
-# formatting
-#sns.set()
-
-'''params = {
-    "legend.fontsize": "x-large",
-    "figure.figsize": (15, 10),
-    "axes.labelsize": "x-large",
-    "axes.titlesize": "x-large",
-    "xtick.labelsize": "x-large",
-    "ytick.labelsize": "x-large",
-}
-plt.rcParams.update(params)'''
+import json
+from pathlib import Path
 
 # turn off spammy warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-def random_forest_classifier(treatment):
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.model_selection import LeaveOneOut, cross_val_predict, cross_validate, ParameterGrid
-    from sklearn.metrics import classification_report, roc_auc_score, average_precision_score
-    import numpy as np
-    import json
-    import time
-    
-    
-    start_time = time.time()
-    
+def random_forest_classifier(in_path, treatment, out_dir, log_path):
     control = 'No' + treatment
     classes = {treatment: 1, control: 0}
     
-    df = pd.read_csv(treatment + '.' + control + '.tsv', sep='\t')
+    df = pd.read_csv(in_path, sep='\t')
     if(df.shape[1] == 1):
         print('No features')
-        return
-    '''df['class'] = df['sample'].apply(lambda x: 0 if control in x else 1)
-    print(list(zip(df['sample'], df['class'])))
+        return    
+    df['class'] = df['key'].apply(lambda x: 0 if control in x else 1)
+    print(list(zip(df['key'], df['class'])))
     y_true = np.array(df['class'].values)
-    X = df.set_index('sample').drop(columns=['class'])
-    print(X.shape, y_true.shape)'''
-    
-    df['class'] = df['Key'].apply(lambda x: 0 if control in x else 1)
-    print(list(zip(df['Key'], df['class'])))
-    y_true = np.array(df['class'].values)
-    X = df.set_index('Key').drop(columns=['class'])
+    X = df.set_index('key').drop(columns=['class'])
     print(X.shape, y_true.shape)
     
-    
-    
-    result_dir = treatment
-    if os.path.exists(result_dir):
-        shutil.rmtree(result_dir)
-    os.makedirs(result_dir)
-    os.chdir(result_dir)
+    if os.path.exists(out_dir):
+        shutil.rmtree(out_dir)
+    os.makedirs(out_dir)
+    os.chdir(out_dir)
     
 
     # Param grid to search for each food
@@ -80,7 +46,7 @@ def random_forest_classifier(treatment):
     }
 
     original_stdout = sys.stdout
-    log_file = open(treatment + '.' + control + '.random_forest.log', 'w')
+    log_file = open(log_path, 'w')
     sys.stdout = log_file
     print("-------", treatment, "-------")
 
@@ -187,61 +153,31 @@ def random_forest_classifier(treatment):
         fig.suptitle(feature, size=22)
         fig.savefig(treatment + '.' + control + '.' + feature + '.boxplot.png', bbox_inches="tight")
         plt.close(fig)
-    end_time = time.time()
-    print(end_time - start_time, 'seconds')
-    
+
     sys.stdout = original_stdout
     log_file.flush()
     log_file.close()
     
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--in_path", type=str,
+                        help="path to input features in .tsv format",
+                        required=True, default=None)
+    parser.add_argument("-o", "--out_dir", type=str,
+                        help="path to output dir",
+                        required=True, default=None)
+    parser.add_argument("-l", "--log_path", type=str,
+                        help="path to log file",
+                        required=True, default=None)
+    parser.add_argument("-t", "--treatment", type=str,
+                        help="Diet of the treatment group",
+                        required=True, default=None)
+    args = parser.parse_args()
+    return args
 
-def main():
-    #alpha_list = [0.99, 0.85, 0.75, 0.50, 0.25, 0.10]
-    #treatments = ['Almond', 'Avocado', 'Barley', 'Broccoli', 'Oats', 'Walnut']
-    #feature_types = ['reaction', 'metabolite']
-    '''react_sets = ['Reaction-Set-' + str(i) for i in range(1, 5)]
-    rwr_list = ['RWR-3.1', 'RWR-3.2']
-    alpha_list = [0.85]
-    treatments = ['Almond', 'Avocado', 'Barley', 'Broccoli', 'Oats', 'Walnut']
-    feature_types = ['reaction']
+def main(args):
+    Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+    random_forest_classifier(args.in_path, args.treatment, args.out_dir, args.log_path)
     
-    for react_set in react_sets:
-        for rwr in rwr_list:
-            for treatment in treatments:
-                for feature_type in feature_types:
-                    for alpha in alpha_list:
-
-                        print('===', 'alpha', alpha, 'feature_type', feature_type, 'treatment', treatment, '===', flush=True)
-                        print()
-                        working_dir = '/home/ksarker2/Nutrition/New-Metabolomic-Data-Analysis-Phase-2/Analysis/Reactions/' + react_set + '/' + rwr + '/alpha=' + str(alpha) + '/classification/' + feature_type 
-                        os.chdir(working_dir)
-                        random_forest_classifier(treatment)
-                        print('\n')'''
-    react_sets = ['Reaction-Set-' + str(i) for i in range(1, 5)]
-    rc_list = ['RC-1/classification', 'RC-1/classification-met34']
-    treatments = ['Almond', 'Avocado', 'Barley', 'Broccoli', 'Oats', 'Walnut']
-    
-    for react_set in react_sets:
-        for rc in rc_list:
-            for treatment in treatments:
-                print('===', react_set, rc, 'treatment', treatment, '===', flush=True)
-                print()
-                working_dir = '/home/ksarker2/Nutrition/New-Metabolomic-Data-Analysis-Phase-2/Analysis/Reactions/' + react_set + '/' + rc
-                os.chdir(working_dir)
-                random_forest_classifier(treatment)
-                print('\n')
-    
-    react_sets = ['Reaction-Set-' + str(i) for i in range(1, 5, 2)]
-    er_list = ['ER-1/classification', 'ER-1/classification-met34']
-    treatments = ['Almond', 'Avocado', 'Barley', 'Broccoli', 'Oats', 'Walnut']
-    
-    for react_set in react_sets:
-        for er in er_list:
-            for treatment in treatments:
-                print('===', react_set, er, 'treatment', treatment, '===', flush=True)
-                print()
-                working_dir = '/home/ksarker2/Nutrition/New-Metabolomic-Data-Analysis-Phase-2/Analysis/Reactions/' + react_set + '/' + er
-                os.chdir(working_dir)
-                random_forest_classifier(treatment)
-                print('\n')
-main()
+if __name__ == "__main__":
+    main(parse_args())

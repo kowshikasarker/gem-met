@@ -1,4 +1,4 @@
-Materials for the following paper: Kowshika Sarker, Ruoqing Zhu, Hannah D. Holscher, and ChengXiang Zhai. 2023. Augmenting nutritional metabolomics with a genome-scale metabolic model for assessment of diet intake. In Proceedings of the 14th ACM International Conference on Bioinformatics, Computational Biology, and Health Informatics (BCB '23). Association for Computing Machinery, New York, NY, USA, Article 4, 1–10. https://doi.org/10.1145/3584371.3612958
+Materials for the paper: Kowshika Sarker, Ruoqing Zhu, Hannah D. Holscher, and ChengXiang Zhai. 2023. Augmenting nutritional metabolomics with a genome-scale metabolic model for assessment of diet intake. In Proceedings of the 14th ACM International Conference on Bioinformatics, Computational Biology, and Health Informatics (BCB '23). Association for Computing Machinery, New York, NY, USA, Article 4, 1–10. https://doi.org/10.1145/3584371.3612958
 ## Scripts
 | Filename  | Functionality |
 | ------------- | ------------- |

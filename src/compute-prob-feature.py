@@ -6,34 +6,34 @@ import numpy as np
 from pathlib import Path
 import sys
 
-
-
-
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-b", "--base_path", type=str,
+    parser.add_argument("--base_path", type=str,
                         help="path to baseline metabolomics profile in .tsv format",
                         required=True, default=None)
-    parser.add_argument("-e", "--end_path", type=str,
+    parser.add_argument("--end_path", type=str,
                         help="path to end metabolomics profile in .tsv format",
                         required=True, default=None)
-    parser.add_argument("-c", "--met_change_path", type=str,
+    parser.add_argument("--met_change_path", type=str,
                         help="path to metabolite concentration change in .tsv format", required=True, default=None)
     
-    parser.add_argument("-r", "--react_set_path", type=str,
+    parser.add_argument("--react_set_path", type=str,
                         help="path to reaction set in .tsv format",
                         required=True, default=None)
     
-    parser.add_argument("-m", "--met_path", type=str,
+    parser.add_argument("--valid_met_path", type=str,
                         help="path to list of human-gem overlapped metabolites in .tsv format", required=True, default=None)
-    parser.add_argument("-a", "--alpha", type=float,
+    
+    parser.add_argument("--alpha", type=float,
                         help="Parameter alpha for RWR algorithm", required=True, default=None)
-    parser.add_argument("-o", "--out_dir", type=str,
-                        help="path to output dir",
-                        required=True, default=None)
-    parser.add_argument("-l", "--log_path", type=str,
+    
+    parser.add_argument("--log_path", type=str,
                         help="path to log file",
                         required=True, default=None)
+    parser.add_argument("--out_dir", type=str,
+                        help="path to output dir",
+                        required=True, default=None)
+    
     args = parser.parse_args()
     return args
 
@@ -172,9 +172,9 @@ def main(args):
     react_df['Measured_Product'] = react_df['Measured_Product'].apply(str_to_set)
 
 
-    id_df = pd.read_csv(args.met_path, sep='\t')
+    id_df = pd.read_csv(args.valid_met_path, sep='\t')
 
-    met_to_hmdb = dict(zip(id_df.MET_ID, id_df.HMDB_ID))
+    met_to_hmdb = dict(zip(id_df.MET_ID, id_df.ID))
 
     met_react_map = {}
     for hmdb in hmdb_list:

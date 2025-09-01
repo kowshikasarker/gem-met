@@ -4,30 +4,54 @@ import pathlib
 import sys
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Preprocesses metablomic profiles and Human-GEM, computes features integerating these two processed sources and performs classification with the features.')
+    parser = argparse.ArgumentParser(description='Preprocesses user-provided metabolomic profiles and Human-GEM, computes novel features integerating these two processed sources and performs classification with the features.')
     
-    parser.add_argument("-b", "--base_path", type=str,
-                        help="path to baseline metabolomics profile in tsv format",
+    parser.add_argument("--base_path", type=str,
+                        help="path to baseline metabolomics in tsv format",
                         required=True, default=None)
-    parser.add_argument("-e", "--end_path", type=str,
-                        help="path to end metabolomics profile in tsv format",
+    parser.add_argument("--end_path", type=str,
+                        help="path to end metabolomics in tsv format",
                         required=True, default=None)
-    parser.add_argument("-g", "--gem_met_path", type=str,
-                        help="path to human gem metabolites list in tsv format", required=True, default=None)
-    parser.add_argument("-x", "--human_gem_path", type=str,
-                        help="path to human gem model in .xlsx format", required=True, default=None)
-    parser.add_argument("-i", "--id_path", type=str,
-                        help="path to metabolite identifiers in tsv format", required=True, default=None)
-    parser.add_argument("-l", "--log_path", type=str,
+    
+    parser.add_argument("--missing_pct", type=float,
+                        help="threshold of missing value percentage for dropping columns",
+                        required=True, default=None)
+    
+    parser.add_argument("--user_met_id_path", type=str,
+                        help="path to list of user metabolites (columns in in base_path and end_path) with standard identifiers in tsv format",
+                        required=True, default=None)
+    parser.add_argument("--user_met_name_col", type=str,
+                        help="which column in user_met_id_path contains the metabolite names",
+                        required=True, default=None)
+    parser.add_argument("--user_met_id_col", type=str,
+                        help="which column in user_met_id_path contains the metabolite standard identifiers",
+                        required=True, default=None)
+    
+    parser.add_argument("--gem_path", type=str,
+                        help="path to a gem model in .xlsx format",
+                        required=True, default=None)
+    parser.add_argument("--gem_met_id_path", type=str,
+                        help="path to list of human gem metabolites with standard identifiers list in tsv format",
+                        required=True, default=None)
+    parser.add_argument("--gem_met_id_col", type=str,
+                        help="which column in gem_met_id_path contains the metabolite standard identifiers",
+                        required=True, default=None)
+    
+    parser.add_argument("--alpha", type=float,
+                        help="Parameter alpha for RWR algorithm",
+                        required=True, default=None)
+    
+    parser.add_argument("--script_path", type=str,
+                        help="path to folder ith all scripts",
+                        required=True, default=None)
+    
+    parser.add_argument("--log_path", type=str,
                         help="path to log file",
                         required=True, default=None)
-    parser.add_argument("-o", "--out_dir", type=str,
+    parser.add_argument("--out_dir", type=str,
                         help="path to output dir",
                         required=True, default=None)
-    parser.add_argument("-m", "--missing_pct", type=float,
-                        help="threshold of missing value percentage for dropping columns", required=True, default=None)
-    parser.add_argument("-a", "--alpha", type=float,
-                        help="Parameter alpha for RWR algorithm", required=True, default=None)
+    
     args = parser.parse_args()
     return args
 
@@ -39,62 +63,86 @@ def main(args):
     sys.stdout = log_file
     
     #preprocess metabolome
-    b = args.base_path
-    e = args.end_path
-    g = args.gem_met_path
-    x = args.human_gem_path
-    i = args.id_path
-    o = args.out_dir + '/Preprocessed-Metabolome'
-    l = o + '/preprocess-metabolome.log'
-    m = str(args.missing_pct)
-    
-    command = 'python3 -W ignore preprocess-metabolome.py -b ' + b + ' -e ' + e + ' -g ' + g + ' -x ' + x + ' -i ' + i + ' -l ' + l + ' -o ' + o + ' -m ' + m
-    
+    met_out_dir = args.out_dir + '/preprocess/metabolome'
+    met_log_path =  met_out_dir + '/preprocess-metabolome.log'
+    command = 'python3 -W ignore ' + args.script_path + '/preprocess-metabolome.py' + \
+        ' --base_path ' + args.base_path + \
+        ' --end_path ' + args.end_path + \
+        ' --missing_pct ' + str(args.missing_pct) + \
+        ' --user_met_id_path ' + args.user_met_id_path + \
+        ' --user_met_name_col ' + args.user_met_name_col + \
+        ' --user_met_id_col ' + args.user_met_id_col + \
+        ' --gem_path ' + args.gem_path + \
+        ' --gem_met_id_path ' + args.gem_met_id_path + \
+        ' --gem_met_id_col ' + args.gem_met_id_col + \
+        ' --log_path ' + met_log_path + \
+        ' --out_dir ' + met_out_dir
+      
     os.system(command)
     print("Preprocessing metabolome complete.")
-    
+        
     #preprocessing human-gem
-    m = args.out_dir + '/Preprocessed-Metabolome/gem_overlapped_metabolites.tsv'
-    o = args.out_dir + '/Preprocessed-Human-GEM'
-    l = o + '/preprocess-human-gem.log'
-    x = args.human_gem_path
+    valid_met_path = met_out_dir + '/gem_overlapped_metabolites.tsv'
+    gem_out_dir = args.out_dir + '/preprocess/gem'
+    gem_log_path =  gem_out_dir + '/preprocess-gem.log'
     
-    command = 'python3 -W ignore preprocess-human-gem.py -x ' + x + ' -m ' + m + ' -o ' + o + ' -l ' + l
+    command = 'python3 -W ignore ' + args.script_path + '/preprocess-gem.py' + \
+        ' --gem_path ' + args.gem_path + \
+        ' --valid_met_path ' + valid_met_path + \
+        ' --log_path ' + gem_log_path + \
+        ' --out_dir ' + gem_out_dir
     
     os.system(command)
-    
-    print("Preprocessing human-gem complete.")
+    print("Preprocessing gem complete.")
     
     #compute features
-    c = args.out_dir + '/Preprocessed-Metabolome/gem_overlapped_change_hmdb.tsv'
-    m = args.out_dir + '/Preprocessed-Metabolome/gem_overlapped_metabolites.tsv'
+    met_change_path = met_out_dir + '/gem_overlapped_change_id.tsv'
+    feature_out_dir = args.out_dir + '/feature'
+    
+    react_set_paths = {}
+    react_set_out_dirs = {}
+    for react_set_no in range(1, 10):
+        react_set_paths[react_set_no] = gem_out_dir + '/reaction-set-' + str(react_set_no) + '/reaction-set-' + str(react_set_no) + '.tsv'
+        react_set_out_dirs[react_set_no] = feature_out_dir + '/reaction-set-' + str(react_set_no)
     #change
     for react_set_no in [1, 2, 3, 4, 7, 8, 9]:
-        r = args.out_dir + '/Preprocessed-Human-GEM/Reaction-Set-' + str(react_set_no) + '/reaction-set-' + str(react_set_no) + '.tsv'
-        o = args.out_dir + '/Features/Reaction-Set-' + str(react_set_no) + '/Change'
-        l = o + '/compute-change-feature.log'
+        change_out_dir = react_set_out_dirs[react_set_no] + '/change'
+        change_log_path = change_out_dir + '/compute-change-feature.log'
         
-        command = 'python3 -W ignore compute-change-feature.py -r ' + r + ' -c ' + c + ' -m' + m + ' -o ' + o + ' -l ' + l
+        command = 'python3 -W ignore ' + args.script_path + '/compute-change-feature.py' + \
+            ' --react_set_path ' + react_set_paths[react_set_no] + \
+            ' --met_change_path ' + met_change_path + \
+            ' --valid_met_path ' + valid_met_path + \
+            ' --log_path ' + change_log_path + \
+            ' --out_dir ' + change_out_dir
         os.system(command)
         
     #ratio
     for react_set_no in [2, 4, 7, 8, 9]:
-        r = args.out_dir + '/Preprocessed-Human-GEM/Reaction-Set-' + str(react_set_no) + '/reaction-set-' + str(react_set_no) + '.tsv'
-        o = args.out_dir + '/Features/Reaction-Set-' + str(react_set_no) + '/Ratio'
-        l = o + '/compute-ratio-feature.log'
+        ratio_out_dir = react_set_out_dirs[react_set_no] + '/ratio'
+        ratio_log_path = ratio_out_dir + '/compute-ratio-feature.log'
         
-        command = 'python3 -W ignore compute-ratio-feature.py -r ' + r + ' -c ' + c + ' -m' + m + ' -o ' + o + ' -l ' + l
+        command = 'python3 -W ignore ' + args.script_path + '/compute-ratio-feature.py' + \
+            ' --react_set_path ' + react_set_paths[react_set_no] + \
+            ' --met_change_path ' + met_change_path + \
+            ' --valid_met_path ' + valid_met_path + \
+            ' --log_path ' + ratio_log_path + \
+            ' --out_dir ' + ratio_out_dir
         os.system(command)
         
     #prob    
-    b = args.out_dir + '/Preprocessed-Metabolome/gem_overlapped_base_hmdb.tsv'
-    e = args.out_dir + '/Preprocessed-Metabolome/gem_overlapped_end_hmdb.tsv'
-    a = str(args.alpha)
     for react_set_no in range(1, 10):
-        r = args.out_dir + '/Preprocessed-Human-GEM/Reaction-Set-' + str(react_set_no) + '/reaction-set-' + str(react_set_no) + '.tsv'
-        o = args.out_dir + '/Features/Reaction-Set-' + str(react_set_no) + '/Prob'
-        l = o + '/compute-prob-feature.log'
-        command = 'python3 -W ignore compute-prob-feature.py -b ' + b + ' -e ' + e + ' -a ' + a + ' -r ' + r + ' -c ' + c + ' -m' + m + ' -o ' + o + ' -l ' + l
+        prob_out_dir = react_set_out_dirs[react_set_no] + '/prob'
+        prob_log_path = prob_out_dir + '/compute-prob-feature.log'
+        command = 'python3 -W ignore ' + args.script_path + '/compute-prob-feature.py' + \
+            ' --base_path ' + met_out_dir + '/gem_overlapped_base_id.tsv' + \
+            ' --end_path ' + met_out_dir + '/gem_overlapped_end_id.tsv' + \
+            ' --met_change_path ' + met_change_path + \
+            ' --react_set_path ' + react_set_paths[react_set_no] + \
+            ' --valid_met_path ' + valid_met_path + \
+            ' --alpha ' + str(args.alpha) + \
+            ' --log_path ' + prob_log_path + \
+            ' --out_dir ' + prob_out_dir    
         os.system(command)
         
     sys.stdout = orig_stdout

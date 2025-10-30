@@ -1,19 +1,32 @@
 import argparse
 import sys
 import os
+from pathlib import Path
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--working_dir", type=str,
-                        help="path to the directory containing features in .tsv format computed by the script preprocess_and_compute_features.py",
+    parser.add_argument("--met_path", type=str,
                         required=True, default=None)
-    parser.add_argument("-l", "--log_path", type=str,
-                        help="path to log file",
+    parser.add_argument("--feature_dir", type=str,
+                        required=True, default=None)
+    parser.add_argument("--case", type=str,
+                        help="name of the case group",
+                        required=True, default=None)
+    parser.add_argument("--control", type=str,
+                        help="name of the control group",
+                        required=True, default=None)
+    parser.add_argument("--script_dir", type=str,
+                        required=True, default=None)
+    parser.add_argument("--out_dir", type=str,
+                        required=True, default=None)
+    parser.add_argument("--log_path", type=str,
                         required=True, default=None)
     args = parser.parse_args()
     return args
 
 def main(args):
+    Path(args.out_dir).mkdir(exist_ok=True, parents=True)
+    
     orig_stdout = sys.stdout
     orig_stderr = sys.stderr
     
@@ -21,36 +34,52 @@ def main(args):
     sys.stdout = log_file
     sys.stderr = log_file
     
-    treatments = ['Almond', 'Walnut', 'Avocado', 'Barley', 'Broccoli', 'Oats']
-    react_feat_map = {
-        1: ['Change', 'Prob/Reaction', 'Prob/Subsystem'],
-        2: ['Change', 'Prob/Reaction', 'Prob/Subsystem', 'Ratio'],
-        3: ['Change', 'Prob/Reaction', 'Prob/Subsystem'],
-        4: ['Change', 'Prob/Reaction', 'Prob/Subsystem', 'Ratio'],
-        5: ['Prob/Reaction', 'Prob/Subsystem'],
-        6: ['Prob/Reaction', 'Prob/Subsystem'],
-        7: ['Change', 'Prob/Reaction', 'Prob/Subsystem'],
-        8: ['Change', 'Prob/Reaction', 'Prob/Subsystem'],
-        9: ['Prob/Reaction', 'Prob/Subsystem']
-    }
-    for react_set_no in range(1, 10):
-        react_set_dir = args.working_dir + '/Reaction-Set-' + str(react_set_no)
-        print()
-        for feature_path in react_feat_map[react_set_no]:
-            feature_dir = react_set_dir + '/' + feature_path
-            feature_type = (feature_path.split('/')[0]).lower()
-            print(feature_type)
-            for treatment in treatments:
-                control = 'No' + treatment
-                
-                i = feature_dir + '/' + treatment + '.' + control + '.' + feature_type + '.tsv'
-                o = feature_dir + '/' + treatment
-                l = o + '/log.txt'
-                
-                command = 'python3 /home/ksarker2/Nutrition/New-Metabolomic-Data-Analysis-Phase-2/Analysis/TCBB-New-Experiments/classification.py -i ' + i + ' -o ' + o + ' -l ' + l + ' -t ' + treatment
-                os.system(command)
-        
-        
+    #metabolite
+    print("Classification with metabolite")
+    met_out_dir = args.out_dir + "/metabolite"
+    met_log_path = met_out_dir + '/classification.log'
+    Path(met_out_dir).mkdir(exist_ok=True, parents=True)
+    
+    command = "python -W ignore " + args.script_dir + "/classification.py" + \
+        " --in_path " + args.met_path + \
+        " --case " + args.case + \
+        " --control " + args.control + \
+        " --out_dir " + met_out_dir + \
+        " --log_path " + met_log_path
+    
+    os.system(command)
+    
+    #reaction
+    print("Classification with reaction")
+    react_out_dir = args.out_dir + "/reaction"
+    for entry in os.scandir(args.feature_dir):
+        if (entry.is_dir()):
+            for sub_entry in os.scandir(entry.path):
+                if (sub_entry.is_dir()):
+                    command = "python -W ignore " + args.script_dir + "/classification.py" + \
+                        " --in_path " + sub_entry.path + '/reaction.' + sub_entry.name + '.tsv' + \
+                        " --case " + args.case + \
+                        " --control " + args.control + \
+                        " --out_dir " + react_out_dir + "/" + entry.name + "/" + sub_entry.name + \
+                        " --log_path " + react_out_dir + "/" + entry.name + "/" + sub_entry.name + "/classification.log"
+                    os.system(command)
+                    
+    #metabolite+reaction
+    print("Classification with metabolite and reaction")
+    met_react_out_dir = args.out_dir + "/metabolite+reaction"
+    print("Classification with reaction")
+    react_out_dir = args.out_dir + "/reaction"
+    for entry in os.scandir(args.feature_dir):
+        if (entry.is_dir()):
+            for sub_entry in os.scandir(entry.path):
+                if (sub_entry.is_dir()):
+                    command = "python -W ignore " + args.script_dir + "/classification.py" + \
+                        " --in_path " + sub_entry.path + '/metabolite.reaction.' + sub_entry.name + '.tsv' + \
+                        " --case " + args.case + \
+                        " --control " + args.control + \
+                        " --out_dir " + met_react_out_dir + "/" + entry.name + "/" + sub_entry.name + \
+                        " --log_path " + met_react_out_dir + "/" + entry.name + "/" + sub_entry.name + "/classification.log"
+                    os.system(command) 
     sys.stdout = orig_stdout
     sys.stderr = orig_stderr 
     log_file.close()

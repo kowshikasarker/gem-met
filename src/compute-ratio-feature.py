@@ -46,15 +46,7 @@ def main(args):
     sys.stdout = log_file
     sys.stderr = log_file
     
-    change_df = pd.read_csv(args.met_change_path, sep='\t')
-    change_df[['person_id', 'diet']] = change_df['key'].str.split('.', expand=True)
-    
-    treatments = set(change_df.diet)
-    treatments = [treatment for treatment in treatments if not treatment.startswith('No')]
-    print('treatments', treatments)
-    
-    change_df = change_df.drop(columns=['person_id', 'diet']).set_index('key')
-    
+    change_df = pd.read_csv(args.met_change_path, sep='\t', index_col='key')
     change_df = change_df.sort_index().sort_index(axis=1)
 
     id_df = pd.read_csv(args.valid_met_path, sep='\t')
@@ -68,25 +60,36 @@ def main(args):
     
     react_col = 0
         
-    for treatment in treatments:
-        control = 'No' + treatment
-        study_change_df = change_df[change_df.index.str.contains(treatment)]
-        print('study_change_df', study_change_df.shape)
-        er1_df_dict = {}
-        for idx, rxn in react_set_df.iterrows():
-            er1_col = 0
-            for pair in rxn['Measured_Product_Substrate_Pair']:
-                if not (pair[0] in met_to_hmdb):
-                    print('pair[0]', pair[0], rxn['Measured_Product_Substrate_Pair'])
-                hmdb_product = met_to_hmdb[pair[0]]
-                if not (pair[1] in met_to_hmdb):
-                    print('pair[1]', pair[1], rxn['Measured_Product_Substrate_Pair'])
-                hmdb_substrate = met_to_hmdb[pair[1]]
-                er1_col = er1_col + (study_change_df[hmdb_product] / study_change_df[hmdb_substrate])
-            er1_df_dict[rxn['RXN_ID']] = er1_col
+    
+    er1_df_dict = {}
+    for idx, rxn in react_set_df.iterrows():
+        er1_col = 0
+        for pair in rxn['Measured_Product_Substrate_Pair']:
+            if not (pair[0] in met_to_hmdb):
+                print('pair[0]', pair[0], rxn['Measured_Product_Substrate_Pair'])
+            hmdb_product = met_to_hmdb[pair[0]]
+            if not (pair[1] in met_to_hmdb):
+                print('pair[1]', pair[1], rxn['Measured_Product_Substrate_Pair'])
+            hmdb_substrate = met_to_hmdb[pair[1]]
+            er1_col = er1_col + (change_df[hmdb_product] / change_df[hmdb_substrate])
+        er1_df_dict[rxn['RXN_ID']] = er1_col
 
-        er1_df = pd.DataFrame(er1_df_dict)
-        er1_df.to_csv(args.out_dir + '/' + treatment + '.' + control + '.ratio.tsv', sep='\t', index=True)
+    er1_df = pd.DataFrame(er1_df_dict)
+    
+    er1_df = er1_df.iloc[:, :2]
+    
+    df1 = er1_df.reset_index(names='index')
+    df1[['sample_id', 'sample_group']] = df1['index'].str.split(":", expand=True)
+    df1 = df1.set_index(['sample_id', 'sample_group'])
+    df1 = df1.drop(columns='index')
+    df1.to_csv(args.out_dir + '/reaction.ratio.tsv', sep='\t', index=True)
+    
+    df2 = pd.concat([change_df, er1_df], axis=1)
+    df2 = df2.reset_index(names='index')
+    df2[['sample_id', 'sample_group']] = df2['index'].str.split(":", expand=True)
+    df2 = df2.set_index(['sample_id', 'sample_group'])
+    df2 = df2.drop(columns='index')
+    df2.to_csv(args.out_dir + '/metabolite.reaction.ratio.tsv', sep='\t', index=True)
         
     sys.stdout = orig_stdout
     sys.stderr = orig_stderr

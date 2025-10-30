@@ -1,3 +1,7 @@
+# export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+# to resolve
+# ImportError: /lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/ksarker2/miniconda3/envs/metabolite/lib/python3.10/site-packages/kiwisolver/_cext.cpython-310-x86_64-linux-gnu.so)
+
 # imports
 import argparse
 import pandas as pd
@@ -15,18 +19,14 @@ from pathlib import Path
 # turn off spammy warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-def random_forest_classifier(in_path, treatment, out_dir, log_path):
-    control = 'No' + treatment
-    classes = {treatment: 1, control: 0}
-    
+def random_forest_classifier(in_path, case, control, out_dir, log_path):
+    classes = {case: 1, control: 0}
     df = pd.read_csv(in_path, sep='\t')
-    if(df.shape[1] == 1):
-        print('No features')
-        return    
-    df['class'] = df['key'].apply(lambda x: 0 if control in x else 1)
-    print(list(zip(df['key'], df['class'])))
+        
+    df['class'] = df['sample_group'].apply(lambda x: 1 if x == case else 0)
+    
     y_true = np.array(df['class'].values)
-    X = df.set_index('key').drop(columns=['class'])
+    X = df.set_index('sample_id').drop(columns=['class', 'sample_group'])
     print(X.shape, y_true.shape)
     
     if os.path.exists(out_dir):
@@ -34,7 +34,6 @@ def random_forest_classifier(in_path, treatment, out_dir, log_path):
     os.makedirs(out_dir)
     os.chdir(out_dir)
     
-
     # Param grid to search for each food
     param_grid = {
         "n_estimators": [1000],
@@ -45,14 +44,14 @@ def random_forest_classifier(in_path, treatment, out_dir, log_path):
         "min_samples_leaf": [1, 3, 5],
     }
 
-    original_stdout = sys.stdout
     log_file = open(log_path, 'w')
+
+    original_stdout = sys.stdout
     sys.stdout = log_file
-    print("-------", treatment, "-------")
-
-    # make directory
     
-
+    original_stderr = sys.stderr
+    sys.stderr = log_file
+    
     # Grid search
     best_rf = None
     best_params = None
@@ -78,7 +77,7 @@ def random_forest_classifier(in_path, treatment, out_dir, log_path):
                 best_rf = estimator
                 best_params = params
 
-    print(treatment, "-> Best parameters from grid search:", best_params)
+    print(case, 'vs', control, "-> Best parameters from grid search:", best_params)
 
     # Cross-val predict probabilities using leave one out and our new best parameters
     rfc = RandomForestClassifier()
@@ -92,15 +91,15 @@ def random_forest_classifier(in_path, treatment, out_dir, log_path):
         method="predict_proba",
     )
 
-    np.savetxt(fname=treatment + '.' + control + '.classifier_prediction.tsv', header=treatment + '\t' + control, X=y_proba, delimiter='\t')
+    np.savetxt(fname=case + '.' + control + '.classifier_prediction.tsv', header=case + '\t' + control, X=y_proba, delimiter='\t')
     
     y_pred = [score.argmax() for score in y_proba]
     
-    metric = classification_report(y_true, y_pred, target_names=[control, treatment], output_dict=True)
+    metric = classification_report(y_true, y_pred, target_names=[control, case], output_dict=True)
     metric['auroc'] = round(roc_auc_score(y_true, y_proba[:, 1]), 2)
     metric['auprc'] = round(average_precision_score(y_true, y_proba[:, 1]), 2)
     
-    metric_file = open(treatment + '.' + control + '.classifier_performance.json', 'w')
+    metric_file = open(case + '.' + control + '.classifier_performance.json', 'w')
     
     json.dump(metric, metric_file)
     
@@ -111,22 +110,22 @@ def random_forest_classifier(in_path, treatment, out_dir, log_path):
     # Plot feature importance graph
     feature_idxs = np.argsort(best_rf.feature_importances_)[::-1]
     plt.figure(figsize=(5, 5))
-    plt.title(treatment + 'Feature Importances')
+    plt.title(case + 'Feature Importances')
     plt.xlabel("Feature #")
     plt.ylabel("Feature Importance")
     plt.plot(sorted(best_rf.feature_importances_, reverse=True))
-    plt.savefig(treatment + '.' + control + '.feature-importance.png')
+    plt.savefig(case + '.' + control + '.feature-importance.png')
     plt.close()
     best_features = X.columns[feature_idxs[:10]]
-    print('Top-10 features for', treatment, ':', best_features)
+    print('Top-10 features for', case, ':', best_features)
 
     # feature means per group write-out
-    classes = {0: 'Control', 1: treatment}
+    classes = {0: control, 1: case}
     X_gb = X.copy().iloc[:, feature_idxs]
     X_gb["group"] = list(map(lambda i: classes[i], y_true))
     print("group", X_gb["group"])
-    X_gb.groupby("group").mean().to_csv(treatment + '.' + control + '.feature-mean.csv')
-    X_gb.groupby("group").std().to_csv(treatment + '.' + control + '.feature-std.csv')
+    X_gb.groupby("group").mean().to_csv(case + '.' + control + '.feature-mean.csv')
+    X_gb.groupby("group").std().to_csv(case + '.' + control + '.feature-std.csv')
 
     # Feautre importances write out + figure generation
     best_features_list = list(
@@ -136,7 +135,7 @@ def random_forest_classifier(in_path, treatment, out_dir, log_path):
         )
     )
     #best_features_per_food[food] = best_features_list
-    with open(treatment + '.' + control + '.feature-importance.csv', "w") as f:
+    with open(case + '.' + control + '.feature-importance.csv', "w") as f:
         w = csv.writer(f)
         w.writerow(["Feature", "Importance"])
         for idx in feature_idxs:
@@ -151,33 +150,39 @@ def random_forest_classifier(in_path, treatment, out_dir, log_path):
         ax.set_xlabel("Treatment group")
         ax.set_ylabel("Relative concentration")
         fig.suptitle(feature, size=22)
-        fig.savefig(treatment + '.' + control + '.' + feature + '.boxplot.png', bbox_inches="tight")
+        fig.savefig(case + '.' + control + '.' + feature + '.boxplot.png', bbox_inches="tight")
         plt.close(fig)
 
     sys.stdout = original_stdout
+    sys.stderr = original_stderr
+    
     log_file.flush()
     log_file.close()
     
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--in_path", type=str,
+    parser.add_argument("--in_path", type=str,
                         help="path to input features in .tsv format",
                         required=True, default=None)
-    parser.add_argument("-o", "--out_dir", type=str,
+    parser.add_argument("--case", type=str,
+                        help="name of the case group",
+                        required=True, default=None)
+    parser.add_argument("--control", type=str,
+                        help="name of the control group",
+                        required=True, default=None)
+    parser.add_argument("--out_dir", type=str,
                         help="path to output dir",
                         required=True, default=None)
-    parser.add_argument("-l", "--log_path", type=str,
+    parser.add_argument("--log_path", type=str,
                         help="path to log file",
-                        required=True, default=None)
-    parser.add_argument("-t", "--treatment", type=str,
-                        help="Diet of the treatment group",
                         required=True, default=None)
     args = parser.parse_args()
     return args
 
 def main(args):
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
-    random_forest_classifier(args.in_path, args.treatment, args.out_dir, args.log_path)
+    shutil.copy(args.in_path, args.out_dir)
+    random_forest_classifier(args.in_path, args.case, args.control, args.out_dir, args.log_path)
     
 if __name__ == "__main__":
     main(parse_args())

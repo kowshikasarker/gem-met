@@ -6,7 +6,7 @@ import pandas as pd
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Preprocessing of user-provided baseline (before diet) and end (after diet) metabolomic profiles (expected file format: .tsv).' + \
-        '\n' + 'Two columns sample_id and sample_group are expected to have sample id and sample groups (treatment/control).' + \
+        '\n' + 'Two columns sample_id and sample_group are expected to have sample id and sample groups (case/control).' + \
         '\n' + 'Other columns are expected to have metabolite abundances. These columns may have arbitrary names.' + \
         '\n' + 'Rows or columns absent in any profile are discarded from the other profile.' + \
         '\n' + 'Columns are discarded based on missing value proportion too.' + \
@@ -118,8 +118,8 @@ def main(args):
     base_df.columns = map(str.lower, base_df.columns)
     end_df.columns = map(str.lower, end_df.columns)
     
-    base_df['key'] = base_df['sample_id'].astype(str) + '.' + base_df['sample_group'].astype(str)
-    end_df['key'] = end_df['sample_id'].astype(str) + '.' + end_df['sample_group'].astype(str)
+    base_df['key'] = base_df['sample_id'].astype(str) + ':' + base_df['sample_group'].astype(str)
+    end_df['key'] = end_df['sample_id'].astype(str) + ':' + end_df['sample_group'].astype(str)
     
     base_df = base_df.set_index('key')
     end_df = end_df.set_index('key')
@@ -259,6 +259,12 @@ def main(args):
         file.write(name + '\t' + id + '\t' + mam + '\t' + met + '\n')
     file.flush()
     file.close()
+    
+    df = pd.read_csv(args.out_dir + '/gem_overlapped_change_id.tsv', sep='\t')
+    df[['sample_id', 'sample_group']] = df['key'].str.split(":", expand=True)
+    df = df.set_index(['sample_id', 'sample_group'])
+    df = df.drop(columns='key')
+    df.to_csv(args.out_dir + '/metabolite.tsv', sep='\t', index=True)
     
     sys.stdout = orig_stdout
     log_file.close()

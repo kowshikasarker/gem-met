@@ -27,6 +27,13 @@ def parse_args():
     parser.add_argument("--alpha", type=float,
                         help="Parameter alpha for RWR algorithm", required=True, default=None)
     
+    parser.add_argument("--case", type=str,
+                        help="name of the case group",
+                        required=True, default=None)
+    parser.add_argument("--control", type=str,
+                        help="name of the control group",
+                        required=True, default=None)
+    
     parser.add_argument("--log_path", type=str,
                         help="path to log file",
                         required=True, default=None)
@@ -42,57 +49,44 @@ def str_to_set(cell):
     cell = set(cell.split(', '))
     return cell
 
-def analyze_single_study_per_sample(G, treatment, alpha, out_dir):
-    control = 'No' + treatment
-    print('***', treatment, control, '***')
+def compute_prob_features(G, case, control, alpha):
+    print('***', case, control, '***')
     
     G = G.copy()
     
     node_label = nx.get_node_attributes(G, 'label')
     
     react_nodes = set([node for node, label in node_label.items() if label=='reaction'])
-    #print(len(react_nodes), 'react_nodes')
     
     met_nodes = set([node for node, label in node_label.items() if label=='metabolite'])
-    #print(len(met_nodes), 'met_nodes')
-    
     sample_nodes = set([node for node, label in node_label.items() if label=='sample'])
-    #print(len(sample_nodes), 'sample_nodes')
-    #print(sample_nodes)
-    
-    study_samples = set([s for s in sample_nodes if (treatment in s)])
-    #print('study_samples', len(study_samples))
-    
-    control_samples = set([s for s in study_samples if (control in s)])
-    #print('control_samples', len(control_samples))
-    
-    treatment_samples = study_samples.difference(control_samples)
-    #print('treatment_samples', len(treatment_samples))
-    
+    case_samples = set([s for s in sample_nodes if (s.endswith(case))])
+    control_samples = set([s for s in sample_nodes if (s.endswith(control))])        
+    study_samples = case_samples.union(control_samples)
     invalid_samples = sample_nodes.difference(study_samples)
-    #print('invalid_samples', len(invalid_samples))
-    #print('invalid_samples', len(invalid_samples), invalid_samples)
     
-    #print('Before removing invalid_samples and isolates', G.number_of_nodes(), 'nodes', G.number_of_edges(), 'edges')
+    print("react_nodes", react_nodes)
+    print("met_nodes", met_nodes)
+    print("sample_nodes", sample_nodes)
+    print("case_samples", case_samples)
+    print("control_samples", control_samples)
+    print("study_samples", study_samples)
+    print("invalid_samples", invalid_samples)
     
     G.remove_nodes_from(invalid_samples)
     G.remove_nodes_from(list(nx.isolates(G)))
-    
-    #print('After removing invalid_samples and isolaets', G.number_of_nodes(), 'nodes', G.number_of_edges(), 'edges')
-    
+        
     eq_prob = []
-    
-    #print('study_samples', len(study_samples))
-    
+        
     for key in study_samples:
         prob = nx.pagerank(G, alpha=alpha, personalization={key: 1}, weight="weight", max_iter=1000)
+        print('prob', prob)
         prob['key'] = key
         eq_prob.append(prob)
         
-    #print('eq_prob', eq_prob)
     df = pd.DataFrame.from_records(eq_prob, index='key')
-    df.to_csv(out_dir + '/' + treatment + '.' + control + '.prob.tsv', sep='\t')
     
+    return df
 
 def main(args):
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
@@ -107,14 +101,10 @@ def main(args):
     end_df = pd.read_csv(args.end_path, sep='\t', index_col='key')
     end_df = end_df.sort_index().sort_index(axis=1)
     
-    change_df = pd.read_csv(args.met_change_path, sep='\t')
-    change_df[['person_id', 'diet']] = change_df['key'].str.split('.', expand=True)
+    change_df = pd.read_csv(args.met_change_path, sep='\t', index_col='key')
+    #change_df[['person_id', 'diet']] = change_df['key'].str.split(':', expand=True)
     
-    
-    treatments = set(change_df.diet)
-    treatments = [treatment for treatment in treatments if not treatment.startswith('No')]
-    print('treatments', treatments)
-    change_df = change_df.drop(columns=['person_id', 'diet']).set_index('key')
+    #change_df = change_df.drop(columns=['person_id', 'diet']).set_index('key')
 
     change_df = change_df.sort_index().sort_index(axis=1)
 
@@ -230,6 +220,10 @@ def main(args):
     react_nodes = set([n for n in nodes if n.startswith('MAR')])
     met_nodes = set([n for n in nodes if (n.endswith('+') or n.endswith('-'))])
     sample_nodes = nodes.difference(react_nodes).difference(met_nodes)
+    
+    print("react_nodes", react_nodes)
+    print("met_nodes", met_nodes)
+    print("sample_nodes", sample_nodes)
     node_label = {}
     for n in sample_nodes:
         node_label[n] = 'sample'
@@ -242,8 +236,33 @@ def main(args):
     sample_nodes = nodes.difference(react_nodes).difference(met_nodes)
     pickle.dump(G, open(args.out_dir + '/network.pickle', 'wb'))
     
-    for treatment in treatments:
-        analyze_single_study_per_sample(G, treatment, args.alpha, args.out_dir)
+    
+    prob_df = compute_prob_features(G, args.case, args.control, args.alpha)
+    
+    df1 = prob_df.reset_index(names='index')
+    df1[['sample_id', 'sample_group']] = df1['index'].str.split(":", expand=True)
+    df1 = df1.set_index(['sample_id', 'sample_group'])
+    df1 = df1.drop(columns='index')
+    df1.to_csv(args.out_dir + '/equilibrium_probability.tsv', sep='\t', index=True)
+    
+    prob_df = prob_df[list(react_nodes)]
+    prob_df = prob_df.iloc[:, :2]
+    
+    df2 = prob_df.reset_index(names='index')
+    df2[['sample_id', 'sample_group']] = df2['index'].str.split(":", expand=True)
+    df2 = df2.set_index(['sample_id', 'sample_group'])
+    df2 = df2.drop(columns='index')
+    df2.to_csv(args.out_dir + '/reaction.prob.tsv', sep='\t', index=True)
+    
+    print("change_df", change_df)
+    print("prob_df", prob_df)
+    
+    df3 = pd.concat([change_df, prob_df], axis=1)
+    df3 = df3.reset_index(names='index')
+    df3[['sample_id', 'sample_group']] = df3['index'].str.split(":", expand=True)
+    df3 = df3.set_index(['sample_id', 'sample_group'])
+    df3 = df3.drop(columns='index')
+    df3.to_csv(args.out_dir + '/metabolite.reaction.prob.tsv', sep='\t', index=True)
         
     sys.stdout = orig_stdout
     log_file.close()

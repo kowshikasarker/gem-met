@@ -240,7 +240,12 @@ def main(args):
     prob_df = compute_prob_features(G, args.case, args.control, args.alpha)
     
     df1 = prob_df.reset_index(names='index')
-    df1[['sample_id', 'sample_group']] = df1['index'].str.split(":", expand=True)
+    sample_split = df1['index'].str.rsplit(":", n=1, expand=True)
+    if sample_split.shape[1] != 2:
+        raise ValueError(
+            "Unexpected sample index format encountered while splitting into sample_id and sample_group"
+        )
+    df1[['sample_id', 'sample_group']] = sample_split
     df1 = df1.set_index(['sample_id', 'sample_group'])
     df1 = df1.drop(columns='index')
     df1.to_csv(args.out_dir + '/equilibrium_probability.tsv', sep='\t', index=True)
@@ -249,7 +254,12 @@ def main(args):
     prob_df = prob_df.iloc[:, :2]
     
     df2 = prob_df.reset_index(names='index')
-    df2[['sample_id', 'sample_group']] = df2['index'].str.split(":", expand=True)
+    sample_split = df2['index'].str.rsplit(":", n=1, expand=True)
+    if sample_split.shape[1] != 2:
+        raise ValueError(
+            "Unexpected sample index format encountered while splitting into sample_id and sample_group"
+        )
+    df2[['sample_id', 'sample_group']] = sample_split
     df2 = df2.set_index(['sample_id', 'sample_group'])
     df2 = df2.drop(columns='index')
     df2.to_csv(args.out_dir + '/reaction.prob.tsv', sep='\t', index=True)
@@ -259,7 +269,12 @@ def main(args):
     
     df3 = pd.concat([change_df, prob_df], axis=1)
     df3 = df3.reset_index(names='index')
-    df3[['sample_id', 'sample_group']] = df3['index'].str.split(":", expand=True)
+    sample_split = df3['index'].str.rsplit(":", n=1, expand=True)
+    if sample_split.shape[1] != 2:
+        raise ValueError(
+            "Unexpected sample index format encountered while splitting into sample_id and sample_group"
+        )
+    df3[['sample_id', 'sample_group']] = sample_split
     df3 = df3.set_index(['sample_id', 'sample_group'])
     df3 = df3.drop(columns='index')
     df3.to_csv(args.out_dir + '/metabolite.reaction.prob.tsv', sep='\t', index=True)
@@ -271,4 +286,3 @@ if __name__ == "__main__":
     main(parse_args())
     
     
-

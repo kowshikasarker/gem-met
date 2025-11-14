@@ -261,7 +261,7 @@ def main(args):
     file.close()
     
     df = pd.read_csv(args.out_dir + '/gem_overlapped_change_id.tsv', sep='\t')
-    df[['sample_id', 'sample_group']] = df['key'].str.split(":", expand=True)
+    df[['sample_id', 'sample_group']] = df['key'].str.rsplit(":", n=1, expand=True)
     df = df.set_index(['sample_id', 'sample_group'])
     df = df.drop(columns='key')
     df.to_csv(args.out_dir + '/metabolite.tsv', sep='\t', index=True)

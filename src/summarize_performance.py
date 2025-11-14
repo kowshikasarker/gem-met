@@ -2,9 +2,10 @@ import argparse
 import sys
 import os
 import json
-import dataframe_image as dfi
 import pandas as pd
 from pathlib import Path
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -21,17 +22,66 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def color_cells(x):
-    if(x >= 0.1):
-        return 'background-color: darkturquoise'
-    if(x > 0):
-        return 'background-color: paleturquoise'
-    if(x == 0):
-        return 'background-color: khaki'
-    if(x <= -0.1):
-        return 'background-color: coral'
-    if(x < 0):
-        return 'background-color: mistyrose'
+
+def build_summary_dataframe(parent_dir, feature_root, react_feat_map, metrics, json_filename, baseline_metrics):
+    summary_dict = {
+        "index": ["Accuracy", "AUROC", "AUPRC"],
+        "columns": [],
+        "data": [],
+        "index_names": [""],
+        "column_names": ["Reaction set", "Feature"],
+    }
+
+    for react_set_no in range(1, 10):
+        for feature_name in react_feat_map[react_set_no]:
+            summary_dict["columns"].append((react_set_no, feature_name))
+    summary_dict["columns"].append(("Baseline", "Metabolite"))
+
+    for metric in metrics:
+        metric_values = []
+        for react_set_no in range(1, 10):
+            react_set_dir = os.path.join(parent_dir, feature_root, f"reaction-set-{react_set_no}")
+            for feature_name in react_feat_map[react_set_no]:
+                feature_dir = os.path.join(react_set_dir, feature_name.lower())
+                json_path = os.path.join(feature_dir, json_filename)
+                metric_dict = json.load(open(json_path))
+                metric_values.append(round(metric_dict[metric], 2))
+        metric_values.append(baseline_metrics[metric])
+        summary_dict["data"].append(metric_values)
+
+    summary_df = pd.DataFrame.from_dict(summary_dict, orient="tight")
+    summary_df.index.name = None
+    return summary_df
+
+
+def save_summary_outputs(summary_df, out_dir, prefix, title):
+    summary_payload = json.loads(summary_df.to_json(orient="split"))
+    with open(os.path.join(out_dir, f"{prefix}.json"), "w") as json_file:
+        json.dump(summary_payload, json_file, indent=4)
+
+    plot_df = summary_df.copy()
+    plot_df.columns = [
+        f"{col[0]} | {col[1]}" if isinstance(col, tuple) else str(col)
+        for col in plot_df.columns
+    ]
+
+    plt.figure(figsize=(max(8, len(plot_df.columns) * 0.6), 4.5))
+    ax = sns.heatmap(
+        plot_df,
+        annot=True,
+        fmt=".2f",
+        cmap="coolwarm",
+        cbar=True,
+        linewidths=0.5,
+        linecolor="white",
+    )
+    ax.set_title(title)
+    ax.set_xlabel("Feature configuration")
+    ax.set_ylabel("Metric")
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, f"{prefix}.png"), dpi=300)
+    plt.close()
 
 
 def main(args):
@@ -65,131 +115,39 @@ def main(args):
         9: ['Prob']
     }
     
-    #reaction
-    
-    summary_dict = {'index': ['Accuracy', 'AUROC', 'AUPRC'],
-        'columns': [],
-        'data': [],
-        'index_names': [''],
-        'column_names': ['Reaction set', 'Feature']}
-    
-    for r in range (1, 10):
-        feat_map = react_feat_map[r]
-        for f in range(len(feat_map)):
-            summary_dict['columns'].append((r, feat_map[f]))
-    summary_dict['columns'].append(('Baseline', 'Metabolite'))
-            
     metrics = ['accuracy', 'auroc', 'auprc']
-    
-    for m in range(len(metrics)):
-        metric = metrics[m]
-        print(m, metric)
-        data = []
-        for react_set_no in range(1, 10):
-            react_set_dir = args.in_dir + '/reaction/reaction-set-' + str(react_set_no)
-            print('react_set_no', react_set_no)
-            feat_map = react_feat_map[react_set_no]
-            for f in range(len(feat_map)):
-                feature_type = feat_map[f].lower()
-                print('feature_type', feature_type)
-                feature_dir = react_set_dir + '/' + feature_type
-                
-                json_file = feature_dir + '/' + json_filename
-                metric_dict = json.load(open(json_file))
-                data.append(round(metric_dict[metric], 2))
-        data.append(baseline[m])
-        summary_dict['data'].append(data)
-    print('columns', summary_dict['columns'])
-    print('summary dict created')
-    print(summary_dict)
-    
-    summary_df = pd.DataFrame.from_dict(summary_dict, orient='tight')
-    summary_df.index.name = None
-    summary_json = summary_df.to_json(orient="split")
-    json_file = open(args.out_dir + '/summary.json', 'w')
-    json.dump(json.loads(summary_json), json_file, indent=4)
-    json_file.close()
-    
 
-    diff = summary_df.subtract(baseline, axis=0)
-    
-    row_idx = summary_df.index
-    print(row_idx)
-    col_idx = summary_df.columns[:-1]
-    print(col_idx)
-    subset = pd.IndexSlice[row_idx, col_idx]
+    baseline_metrics = dict(zip(metrics, baseline))
 
-    df_styled = summary_df.style.format(precision=2).set_table_styles(
-    [{"selector": "", "props": [("border", "1px solid black"), ('text-align', 'center'), ('max-width', '100%'), ('white-space', 'nowrap')]},
-      {"selector": "tbody td", "props": [("border", "1px solid black"), ('text-align', 'center'), ('max-width', '100%'), ('white-space', 'nowrap'), ('margin', '5'), ('padding', '5'), ('font-size', 'large')]},
-     {"selector": "th", "props": [("border", "1px solid black"), ('text-align', 'center'), ('max-width', '100%'), ('white-space', 'nowrap'), ('margin', '5'), ('padding', '5'), ('font-size', 'large'), ('font-weight', 'normal'), ('white-space', 'pre')]},
-    ]).set_properties(**{'max-width': '100%', 'white-space': 'nowrap'}).apply(lambda x: diff.applymap(color_cells), axis=None).highlight_max(axis=1, props='font-weight: bold; color: blue', subset=subset)
+    reaction_summary_df = build_summary_dataframe(
+        args.in_dir,
+        "reaction",
+        react_feat_map,
+        metrics,
+        json_filename,
+        baseline_metrics,
+    )
+    save_summary_outputs(
+        reaction_summary_df,
+        args.out_dir,
+        "reaction",
+        "Benchmark: Reaction features only",
+    )
 
-    dfi.export(df_styled, args.out_dir + '/reaction.png', table_conversion="selenium")
-    
-    
-    
-    
-    #metabolite+reaction
-    summary_dict = {'index': ['Accuracy', 'AUROC', 'AUPRC'],
-        'columns': [],
-        'data': [],
-        'index_names': [''],
-        'column_names': ['Reaction set', 'Feature']}
-    
-    for r in range (1, 10):
-        feat_map = react_feat_map[r]
-        for f in range(len(feat_map)):
-            summary_dict['columns'].append((r, feat_map[f]))
-    summary_dict['columns'].append(('Baseline', 'Metabolite'))
-            
-    metrics = ['accuracy', 'auroc', 'auprc']
-    
-    for m in range(len(metrics)):
-        metric = metrics[m]
-        print(m, metric)
-        data = []
-        for react_set_no in range(1, 10):
-            react_set_dir = args.in_dir + '/metabolite+reaction/reaction-set-' + str(react_set_no)
-            print('react_set_no', react_set_no)
-            feat_map = react_feat_map[react_set_no]
-            for f in range(len(feat_map)):
-                feature_type = feat_map[f].lower()
-                print('feature_type', feature_type)
-                feature_dir = react_set_dir + '/' + feature_type
-                
-                json_file = feature_dir + '/' + json_filename
-                metric_dict = json.load(open(json_file))
-                data.append(round(metric_dict[metric], 2))
-        data.append(baseline[m])
-        summary_dict['data'].append(data)
-    print('columns', summary_dict['columns'])
-    print('summary dict created')
-    print(summary_dict)
-    
-    summary_df = pd.DataFrame.from_dict(summary_dict, orient='tight')
-    summary_df.index.name = None
-    summary_json = summary_df.to_json(orient="split")
-    json_file = open(args.out_dir + '/summary.json', 'w')
-    json.dump(json.loads(summary_json), json_file, indent=4)
-    json_file.close()
-    
-
-    diff = summary_df.subtract(baseline, axis=0)
-    
-    row_idx = summary_df.index
-    print(row_idx)
-    col_idx = summary_df.columns[:-1]
-    print(col_idx)
-    subset = pd.IndexSlice[row_idx, col_idx]
-
-    df_styled = summary_df.style.format(precision=2).set_table_styles(
-    [{"selector": "", "props": [("border", "1px solid black"), ('text-align', 'center'), ('max-width', '100%'), ('white-space', 'nowrap')]},
-      {"selector": "tbody td", "props": [("border", "1px solid black"), ('text-align', 'center'), ('max-width', '100%'), ('white-space', 'nowrap'), ('margin', '5'), ('padding', '5'), ('font-size', 'large')]},
-     {"selector": "th", "props": [("border", "1px solid black"), ('text-align', 'center'), ('max-width', '100%'), ('white-space', 'nowrap'), ('margin', '5'), ('padding', '5'), ('font-size', 'large'), ('font-weight', 'normal'), ('white-space', 'pre')]},
-    ]).set_properties(**{'max-width': '100%', 'white-space': 'nowrap'}).apply(lambda x: diff.applymap(color_cells), axis=None).highlight_max(axis=1, props='font-weight: bold; color: blue', subset=subset)
-
-    dfi.export(df_styled, args.out_dir + '/metabolite+reaction.png', table_conversion="selenium")
+    combo_summary_df = build_summary_dataframe(
+        args.in_dir,
+        "metabolite+reaction",
+        react_feat_map,
+        metrics,
+        json_filename,
+        baseline_metrics,
+    )
+    save_summary_outputs(
+        combo_summary_df,
+        args.out_dir,
+        "metabolite+reaction",
+        "Benchmark: Reaction and metabolite features together",
+    )
 
     sys.stdout = orig_stdout
     sys.stderr = orig_stderr 

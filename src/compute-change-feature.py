@@ -78,14 +78,24 @@ def main(args):
     rc1_df = rc1_df.iloc[:, :2]
     
     df1 = rc1_df.reset_index(names='index')
-    df1[['sample_id', 'sample_group']] = df1['index'].str.split(":", expand=True)
+    sample_split = df1['index'].str.rsplit(":", n=1, expand=True)
+    if sample_split.shape[1] != 2:
+        raise ValueError(
+            "Unexpected sample index format encountered while splitting into sample_id and sample_group"
+        )
+    df1[['sample_id', 'sample_group']] = sample_split
     df1 = df1.set_index(['sample_id', 'sample_group'])
     df1 = df1.drop(columns='index')
     df1.to_csv(args.out_dir + '/reaction.change.tsv', sep='\t', index=True)
     
     df2 = pd.concat([change_df, rc1_df], axis=1)
     df2 = df2.reset_index(names='index')
-    df2[['sample_id', 'sample_group']] = df2['index'].str.split(":", expand=True)
+    sample_split = df2['index'].str.rsplit(":", n=1, expand=True)
+    if sample_split.shape[1] != 2:
+        raise ValueError(
+            "Unexpected sample index format encountered while splitting into sample_id and sample_group"
+        )
+    df2[['sample_id', 'sample_group']] = sample_split
     df2 = df2.set_index(['sample_id', 'sample_group'])
     df2 = df2.drop(columns='index')
     df2.to_csv(args.out_dir + '/metabolite.reaction.change.tsv', sep='\t', index=True)
